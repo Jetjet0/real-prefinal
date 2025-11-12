@@ -78,35 +78,48 @@ public class LibraryManagement {
         db.updateRecord(sql);
     }
 
-    // Process book return
-    public static void processReturn(config db, int bookId, int lateDays, String returnDate) {
-        String findSql = "SELECT borrower_email FROM tbl_borrowed WHERE book_id=" + bookId + " AND status='Borrowed'";
-        List<Map<String, Object>> info = db.fetchRecords(findSql);
+    // ✅ Process book return by borrower name
+    public static void processReturn(config db, String borrowerName, int lateDays, String returnDate) {
+        String findSql = "SELECT tb.book_id, tb.borrower_email, tl2.title " +
+                "FROM tbl_borrowed tb " +
+                "JOIN tbl_log tl ON tb.borrower_email = tl.u_email " +
+                "JOIN tbl_Librarian tl2 ON tb.book_id = tl2.bid " +
+                "WHERE tl.b_name='" + borrowerName + "' AND tb.status='Borrowed'";
 
-        if (!info.isEmpty()) {
-            String email = info.get(0).get("borrower_email").toString();
+        List<Map<String, Object>> borrowedBooks = db.fetchRecords(findSql);
 
-            String nameSql = "SELECT b_name FROM tbl_log WHERE u_email='" + email + "'";
-            List<Map<String, Object>> nameInfo = db.fetchRecords(nameSql);
-            String borrowerName = nameInfo.isEmpty() ? "Unknown" : nameInfo.get(0).get("b_name").toString();
+        if (borrowedBooks.isEmpty()) {
+            System.out.println("No borrowed books found for this borrower!");
+            return;
+        }
 
-            String updateSql = "UPDATE tbl_borrowed SET status='Returned', return_date='" + returnDate +
-                    "' WHERE borrower_email='" + email + "' AND book_id=" + bookId;
-            db.updateRecord(updateSql);
+        System.out.println("\n--- Borrowed Books by " + borrowerName + " ---");
+        for (Map<String, Object> row : borrowedBooks) {
+            System.out.println("Book ID: " + row.get("book_id") + " | Title: " + row.get("title"));
+        }
 
-            if (lateDays > 0) {
-                double penalty = lateDays * 10;
-                // ✅ FIXED SQL HERE (previously incomplete)
-                String penaltySql = "INSERT INTO tbl_penalty (b_name, b_email, b_id, b_days, b_penal, b_dpenal) " +
-                        "VALUES ('" + borrowerName + "', '" + email + "', " + bookId + ", " +
-                        lateDays + ", " + penalty + ", datetime('now'))";
-                db.addRecord(penaltySql);
-                System.out.println("Penalty added: P" + penalty + " for " + lateDays + " late days");
-            } else {
-                System.out.println("No penalty - returned on time!");
-            }
+        Scanner sc = new Scanner(System.in);
+        System.out.print("Enter the Book ID to return: ");
+        int bookId = sc.nextInt();
+        sc.nextLine();
+
+        String email = borrowedBooks.get(0).get("borrower_email").toString();
+
+        // Update book status
+        String updateSql = "UPDATE tbl_borrowed SET status='Returned', return_date='" + returnDate +
+                "' WHERE borrower_email='" + email + "' AND book_id=" + bookId;
+        db.updateRecord(updateSql);
+
+        // Apply penalty if late
+        if (lateDays > 0) {
+            double penalty = lateDays * 10;
+            String penaltySql = "INSERT INTO tbl_penalty (b_name, b_email, b_id, b_days, b_penal, b_dpenal) " +
+                    "VALUES ('" + borrowerName + "', '" + email + "', " + bookId + ", " +
+                    lateDays + ", " + penalty + ", datetime('now'))";
+            db.addRecord(penaltySql);
+            System.out.println("Penalty added: P" + penalty + " for " + lateDays + " late days");
         } else {
-            System.out.println("Book not currently borrowed!");
+            System.out.println("No penalty - returned on time!");
         }
     }
 
@@ -231,15 +244,14 @@ public class LibraryManagement {
                     } else if (choice == 5) {
                         System.out.println("\n--- ALL BORROWED BOOKS ---");
                         viewAllBorrowedBooksWithDetails(db);
-                        System.out.print("Book ID to return: ");
-                        int bookId = sc.nextInt();
-                        sc.nextLine();
+                        System.out.print("Borrower Name: ");
+                        String borrowerName = sc.nextLine();
                         System.out.print("Days Late (0 if on time): ");
                         int lateDays = sc.nextInt();
                         sc.nextLine();
                         System.out.print("Return Date (YYYY-MM-DD): ");
                         String returnDate = sc.nextLine();
-                        processReturn(db, bookId, lateDays, returnDate);
+                        processReturn(db, borrowerName, lateDays, returnDate);
                     }
 
                 } else {
